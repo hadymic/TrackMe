@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pagpeter/quic-go"
@@ -168,8 +169,19 @@ func main() {
 	if srv.GetConfig().EnableQUIC {
 		go StartHTTP3Server(srv.GetConfig().Host, tlsPort)
 	}
-	if srv.GetConfig().Device != "" {
-		go tcp.SniffTCP(srv.GetConfig().Device, tlsPort, srv)
+	device := strings.TrimSpace(srv.GetConfig().Device)
+	if device == "auto" {
+		var err error
+		device, err = tcp.DefaultDevice()
+		if err != nil {
+			log.Printf("tcp sniff disabled: auto device: %v", err)
+			device = ""
+		} else {
+			log.Printf("tcp sniff: using auto-selected interface %q", device)
+		}
+	}
+	if device != "" {
+		go tcp.SniffTCP(device, tlsPort, srv)
 	}
 
 	for {

@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"strconv"
@@ -49,10 +50,29 @@ func parseIP(packet gopacket.Packet) *types.IPDetails {
 	}
 }
 
+// DefaultDevice returns the first non-loopback interface that is up (typical primary NIC on cloud VMs).
+func DefaultDevice() (string, error) {
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range ifs {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		return iface.Name, nil
+	}
+	return "", fmt.Errorf("no non-loopback up interface found")
+}
+
 func SniffTCP(device string, tlsPort int, srv *server.Server) {
 	handle, err := pcap.OpenLive(device, snapshot_len, promiscuous, timeout)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("tcp sniff on %q failed (set config \"device\" to your NIC, e.g. ens5, or use \"auto\"): %v", device, err)
+		return
 	}
 	defer handle.Close()
 
