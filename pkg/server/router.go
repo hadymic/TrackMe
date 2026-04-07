@@ -21,8 +21,8 @@ func cleanIP(ip string) string {
 	return strings.Replace(strings.Replace(ip, "]", "", -1), "[", "", -1)
 }
 
-// Router returns bytes, content type, and error that should be sent to the client
-func Router(path string, res types.Response, srv *Server) ([]byte, string, error) {
+// Router returns the HTTP result that should be sent to the client.
+func Router(path string, res types.Response, srv *Server) (RouteResult, error) {
 	if v, ok := srv.GetTCPFingerprints().Load(res.IP); ok {
 		res.TCPIP = v.(types.TCPIPDetails)
 	}
@@ -32,9 +32,11 @@ func Router(path string, res types.Response, srv *Server) ([]byte, string, error
 		if res.HTTPVersion == "h3" {
 			res.TLS.JA4 = tls.CalculateJa4QUIC(res.TLS)
 			res.TLS.JA4_r = tls.CalculateJa4QUIC_r(res.TLS)
+			res.TLS.JA4_ro = tls.CalculateJa4QUIC_ro(res.TLS)
 		} else {
 			res.TLS.JA4 = tls.CalculateJa4(res.TLS)
 			res.TLS.JA4_r = tls.CalculateJa4_r(res.TLS)
+			res.TLS.JA4_ro = tls.CalculateJa4_ro(res.TLS)
 		}
 		Log(fmt.Sprintf("%v %v %v %v %v", cleanIP(res.IP), res.Method, res.HTTPVersion, res.Path, res.TLS.JA3Hash))
 	} else {
@@ -61,7 +63,7 @@ func Router(path string, res types.Response, srv *Server) ([]byte, string, error
 	// 404
 	b, err := utils.ReadFile("static/404.html")
 	if err != nil {
-		return []byte(`{"error": "page not found"}`), "application/json", nil
+		return RouteResult{Body: []byte(`{"error": "page not found"}`), ContentType: "application/json"}, nil
 	}
-	return []byte(b), "text/html", nil
+	return RouteResult{Body: b, ContentType: "text/html"}, nil
 }

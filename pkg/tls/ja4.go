@@ -49,6 +49,20 @@ func ja4b_r(tls *types.TLSDetails) string {
 	return strings.Join(parsed, ",")
 }
 
+func ja4b_ro(tls *types.TLSDetails) string {
+	suites := strings.Split(strings.Split(tls.JA3, ",")[1], "-")
+	parsed := []string{}
+	for _, s := range suites {
+		num, _ := strconv.Atoi(s)
+		hexStr := fmt.Sprintf("%04x", num)
+		if types.IsGrease("0x" + strings.ToUpper(hexStr)) {
+			continue
+		}
+		parsed = append(parsed, hexStr)
+	}
+	return strings.Join(parsed, ",")
+}
+
 func ja4b(tls *types.TLSDetails) string {
 	result := ja4b_r(tls)
 	return utils.SHA256trunc(result)
@@ -88,6 +102,33 @@ func ja4c_r(tls *types.TLSDetails) string {
 	return parsed
 }
 
+func ja4c_ro(tls *types.TLSDetails) string {
+	extensions := strings.Split(strings.Split(tls.JA3, ",")[2], "-")
+	sigAlgs := strings.Split(strings.Split(tls.PeetPrint, "|")[3], "-")
+
+	parsedExt := []string{}
+	for _, ext := range extensions {
+		num, _ := strconv.Atoi(ext)
+		hexStr := fmt.Sprintf("%04x", num)
+		if types.IsGrease("0x" + strings.ToUpper(hexStr)) {
+			continue
+		}
+		parsedExt = append(parsedExt, hexStr)
+	}
+
+	parsedAlg := []string{}
+	for _, alg := range sigAlgs {
+		if alg == "GREASE" {
+			continue
+		}
+		num, _ := strconv.Atoi(alg)
+		hexStr := fmt.Sprintf("%04x", num)
+		parsedAlg = append(parsedAlg, hexStr)
+	}
+
+	return strings.Join(parsedExt, ",") + "_" + strings.Join(parsedAlg, ",")
+}
+
 func ja4c(tls *types.TLSDetails) string {
 	result := ja4c_r(tls)
 	return utils.SHA256trunc(result)
@@ -101,6 +142,10 @@ func CalculateJa4_r(tls *types.TLSDetails) string {
 	return ja4a(tls) + "_" + ja4b_r(tls) + "_" + ja4c_r(tls)
 }
 
+func CalculateJa4_ro(tls *types.TLSDetails) string {
+	return ja4a(tls) + "_" + ja4b_ro(tls) + "_" + ja4c_ro(tls)
+}
+
 // CalculateJa4QUIC calculates JA4 fingerprint for QUIC/HTTP3 connections
 func CalculateJa4QUIC(tls *types.TLSDetails) string {
 	return ja4aWithProto(tls, "q") + "_" + ja4b(tls) + "_" + ja4c(tls)
@@ -109,4 +154,9 @@ func CalculateJa4QUIC(tls *types.TLSDetails) string {
 // CalculateJa4QUIC_r calculates JA4_r fingerprint for QUIC/HTTP3 connections
 func CalculateJa4QUIC_r(tls *types.TLSDetails) string {
 	return ja4aWithProto(tls, "q") + "_" + ja4b_r(tls) + "_" + ja4c_r(tls)
+}
+
+// CalculateJa4QUIC_ro calculates JA4_ro fingerprint for QUIC/HTTP3 connections
+func CalculateJa4QUIC_ro(tls *types.TLSDetails) string {
+	return ja4aWithProto(tls, "q") + "_" + ja4b_ro(tls) + "_" + ja4c_ro(tls)
 }

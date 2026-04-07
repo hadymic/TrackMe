@@ -238,15 +238,13 @@ func (srv *Server) HandleTLSConnection(conn net.Conn) error {
 
 func (srv *Server) respondToHTTP1(conn net.Conn, resp types.Response) {
 	var isAdmin bool
-	var res []byte
-	var ctype = "text/plain"
+	var rr RouteResult
 	if resp.Method != "OPTIONS" {
 		var err error
-		res, ctype, err = Router(resp.Path, resp, srv)
+		rr, err = Router(resp.Path, resp, srv)
 		if err != nil {
 			log.Println("Router error:", err)
-			res = []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error()))
-			ctype = "application/json"
+			rr = RouteResult{Body: []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error())), ContentType: "application/json"}
 		}
 	} else {
 		isAdmin = true
@@ -261,18 +259,26 @@ func (srv *Server) respondToHTTP1(conn net.Conn, resp types.Response) {
 		}
 	}
 
-	res1 := "HTTP/1.1 200 OK\r\n"
-	res1 += "Content-Length: " + fmt.Sprintf("%v\r\n", len(res))
-	res1 += "Content-Type: " + ctype + "; charset=utf-8\r\n"
-	if isAdmin {
+	status := rr.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	res1 := fmt.Sprintf("HTTP/1.1 %d %s\r\n", status, http.StatusText(status))
+	if status == http.StatusNoContent {
+		res1 += "Content-Length: 0\r\n"
+	} else {
+		res1 += "Content-Length: " + fmt.Sprintf("%v\r\n", len(rr.Body))
+		res1 += "Content-Type: " + rr.ContentType + "; charset=utf-8\r\n"
+	}
+	if rr.CORS || isAdmin {
 		res1 += "Access-Control-Allow-Origin: *\r\n"
 		res1 += "Access-Control-Allow-Methods: *\r\n"
 		res1 += "Access-Control-Allow-Headers: *\r\n"
 	}
-	res1 += "Server: TrackMe\r\n"
+	//res1 += "Server: TrackMe\r\n"
 	res1 += "Alt-Svc: h3=\":443\"; ma=86400\r\n"
 	res1 += "\r\n"
-	res1 += string(res)
+	res1 += string(rr.Body)
 	res1 += "\r\n\r\n"
 
 	if _, err := conn.Write([]byte(res1)); err != nil {
@@ -367,49 +373,60 @@ func (srv *Server) handleHTTP2(conn net.Conn, tlsFingerprint *types.TLSDetails) 
 		TLS: tlsFingerprint,
 	}
 
-	var res []byte
-	var ctype = "text/plain"
+	var rr RouteResult
 	if method != "OPTIONS" {
 		var err error
-		res, ctype, err = Router(path, resp, srv)
+		rr, err = Router(path, resp, srv)
 		if err != nil {
 			log.Println("Router error:", err)
-			res = []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error()))
-			ctype = "application/json"
+			rr = RouteResult{Body: []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error())), ContentType: "application/json"}
 		}
 	} else {
 		isAdmin = true
 	}
 
+	status := rr.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	statusStr := strconv.Itoa(status)
+
 	// Prepare HEADERS
 	hbuf := bytes.NewBuffer([]byte{})
 	encoder := hpack.NewEncoder(hbuf)
-	encoder.WriteField(hpack.HeaderField{Name: ":status", Value: "200"})
-	encoder.WriteField(hpack.HeaderField{Name: "server", Value: "TrackMe.peet.ws"})
-	encoder.WriteField(hpack.HeaderField{Name: "content-length", Value: strconv.Itoa(len(res))})
-	encoder.WriteField(hpack.HeaderField{Name: "content-type", Value: ctype})
+	encoder.WriteField(hpack.HeaderField{Name: ":status", Value: statusStr})
+	//encoder.WriteField(hpack.HeaderField{Name: "server", Value: "TrackMe.peet.ws"})
+	if status == http.StatusNoContent {
+		encoder.WriteField(hpack.HeaderField{Name: "content-length", Value: "0"})
+	} else {
+		encoder.WriteField(hpack.HeaderField{Name: "content-length", Value: strconv.Itoa(len(rr.Body))})
+		encoder.WriteField(hpack.HeaderField{Name: "content-type", Value: rr.ContentType})
+	}
 	encoder.WriteField(hpack.HeaderField{Name: "alt-svc", Value: "h3=\":443\"; ma=86400"})
-	if isAdmin {
+	if rr.CORS || isAdmin {
 		encoder.WriteField(hpack.HeaderField{Name: "access-control-allow-origin", Value: "*"})
 		encoder.WriteField(hpack.HeaderField{Name: "access-control-allow-methods", Value: "*"})
 		encoder.WriteField(hpack.HeaderField{Name: "access-control-allow-headers", Value: "*"})
 	}
 
+	endStream := status == http.StatusNoContent
 	// Write HEADERS frame
-	if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: headerFrame.Stream, BlockFragment: hbuf.Bytes(), EndHeaders: true}); err != nil {
+	if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: headerFrame.Stream, BlockFragment: hbuf.Bytes(), EndHeaders: true, EndStream: endStream}); err != nil {
 		log.Println("Error writing headers:", err)
 		return
 	}
 
-	chunks := utils.SplitBytesIntoChunks(res, 1024)
-	for _, chunk := range chunks {
-		if err := fr.WriteData(headerFrame.Stream, false, chunk); err != nil {
-			log.Println("Error writing data chunk:", err)
-			return
+	if !endStream {
+		chunks := utils.SplitBytesIntoChunks(rr.Body, 1024)
+		for _, chunk := range chunks {
+			if err := fr.WriteData(headerFrame.Stream, false, chunk); err != nil {
+				log.Println("Error writing data chunk:", err)
+				return
+			}
 		}
-	}
-	if err := fr.WriteData(headerFrame.Stream, true, []byte{}); err != nil {
-		log.Println("Error writing final data frame:", err)
+		if err := fr.WriteData(headerFrame.Stream, true, []byte{}); err != nil {
+			log.Println("Error writing final data frame:", err)
+		}
 	}
 	if err := fr.WriteGoAway(headerFrame.Stream, http2.ErrCodeNo, []byte{}); err != nil {
 		log.Println("Error writing GoAway:", err)
@@ -435,6 +452,16 @@ func (srv *Server) HandleHTTP3() http.Handler {
 		h3c := h3w.Connection()
 		if h3c == nil {
 			http.Error(w, "No HTTP/3 connection", http.StatusInternalServerError)
+			return
+		}
+
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
+			//w.Header().Set("Server", "TrackMe")
+			w.Header().Set("Alt-Svc", `h3=":443"; ma=86400`)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -517,18 +544,31 @@ func (srv *Server) HandleHTTP3() http.Handler {
 			},
 		}
 
-		res, ctype, err := Router(r.URL.Path, resp, srv)
+		rr, err := Router(r.URL.Path, resp, srv)
 		if err != nil {
 			log.Println("Router error:", err)
-			res = []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error()))
-			ctype = "application/json"
+			rr = RouteResult{Body: []byte(fmt.Sprintf(`{"error": "%s"}`, err.Error())), ContentType: "application/json"}
 		}
 
-		w.Header().Set("Content-Type", ctype)
-		w.Header().Set("Server", "TrackMe")
+		if rr.CORS {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
+		}
+		if rr.ContentType != "" {
+			w.Header().Set("Content-Type", rr.ContentType)
+		}
+		//w.Header().Set("Server", "TrackMe")
 		w.Header().Set("Alt-Svc", `h3=":443"; ma=86400`)
-		if _, err := w.Write(res); err != nil {
-			log.Println("Error writing HTTP/3 response:", err)
+		status := rr.Status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		w.WriteHeader(status)
+		if len(rr.Body) > 0 {
+			if _, err := w.Write(rr.Body); err != nil {
+				log.Println("Error writing HTTP/3 response:", err)
+			}
 		}
 	})
 

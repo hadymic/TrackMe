@@ -16,8 +16,9 @@ type TLSDetails struct {
 	JA3     string `json:"ja3"`
 	JA3Hash string `json:"ja3_hash"`
 
-	JA4   string `json:"ja4"`
-	JA4_r string `json:"ja4_r"`
+	JA4    string `json:"ja4"`
+	JA4_r  string `json:"ja4_r"`
+	JA4_ro string `json:"ja4_ro"`
 
 	PeetPrint     string `json:"peetprint"`
 	PeetPrintHash string `json:"peetprint_hash"`
@@ -134,6 +135,7 @@ type SmallResponse struct {
 	JA3Hash       string `json:"ja3_hash"`
 	JA4           string `json:"ja4"`
 	JA4_r         string `json:"ja4_r"`
+	JA4_ro        string `json:"ja4_ro"`
 	Akamai        string `json:"akamai"`
 	AkamaiHash    string `json:"akamai_hash"`
 	PeetPrint     string `json:"peetprint"`
@@ -148,6 +150,21 @@ func (res SmallResponse) ToJson() string {
 		return ""
 	}
 	return string(j)
+}
+
+type FingerprintRecord struct {
+	JA3         string `json:"ja3"`
+	JA3Hash     string `json:"ja3_hash"`
+	JA4         string `json:"ja4"`
+	JA4_r       string `json:"ja4_r"`
+	JA4_ro      string `json:"ja4_ro"`
+	Akamai      string `json:"akamai"`
+	AkamaiHash  string `json:"akamai_hash"`
+	HTTPVersion string `json:"http_version"`
+	IP          string `json:"ip"`
+	UA          string `json:"ua"`
+	EventDate   string `json:"event_date"`
+	EventTime   int64  `json:"event_time"`
 }
 
 type Priority struct {
