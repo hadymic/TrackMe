@@ -1,0 +1,23 @@
+[Unit]
+Description=TrackMe TLS fingerprint API
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/local/apps/api
+ExecStart=/root/local/apps/api/trackme
+Restart=always
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trackme-api
+
+# 需要监听 443/80 时使用 root；若日后降权可改 User 并配合 setcap/反代
+
+[Install]
+WantedBy=multi-user.target

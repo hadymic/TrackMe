@@ -22,7 +22,7 @@ func getFPLog() *lumberjack.Logger {
 			Filename:   fpLogPath,
 			MaxSize:    100,
 			MaxBackups: 10,
-			MaxAge:     30,
+			MaxAge:     3,
 			Compress:   true,
 		}
 	})
