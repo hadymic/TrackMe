@@ -113,7 +113,7 @@ func apiRecord(res types.Response, _ url.Values) (RouteResult, error) {
 		return RouteResult{}, err
 	}
 	line = append(line, '\n')
-	if _, err := getFPLog().Write(line); err != nil {
+	if err := writeFPLogLine(line); err != nil {
 		return RouteResult{}, err
 	}
 	return RouteResult{Status: http.StatusNoContent, CORS: true}, nil
